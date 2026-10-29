@@ -142,7 +142,9 @@ class PoseTracker:
     With ``tracking=True``, the poses returned by a call are in detection
     order and ``track_ids_last_frame[i]`` is the track id of
     ``keypoints[i]``. Poses whose box is smaller than ``MIN_AREA`` and
-    match no existing track are dropped from the output.
+    match no existing track are dropped from the output. With
+    ``tracking=False``, every pose is returned in detection order and no
+    track ids are assigned.
     """
     MIN_AREA = 1000
 

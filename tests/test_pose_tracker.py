@@ -133,19 +133,24 @@ class _BoxPoseModel:
 
 
 class RTMPose3d:
-    """Fake named like the real class: 3D keypoints in model-input space,
-    image-space 2D keypoints last."""
+    """Named like the real class, because PoseTracker branches on the type
+    name. Its 3D keypoints are in a different space than the image-space 2D
+    keypoints it returns last, as in the real model."""
 
     def __call__(self, image, bboxes):
         keypoints2d, scores = _poses(bboxes)
         keypoints = np.concatenate(
-            [keypoints2d / 10, np.zeros(keypoints2d.shape[:2] + (1, ))],
+            [keypoints2d / 10,
+             np.zeros(keypoints2d.shape[:2] + (1, ))],
             axis=-1)
         return keypoints, scores, keypoints.copy(), keypoints2d
 
 
-def _run(frames, pose_model=None, **kwargs):
-    """Run a tracker over scripted frames; return (ids, first-x) per frame."""
+def _run(frames, pose_model=None, n_frames=None, **kwargs):
+    """Track `n_frames` frames (default: one per detector call in `frames`).
+
+    Returns (track ids, first-keypoint x of each pose, raw outputs) per frame.
+    """
 
     class _Solution:
 
@@ -156,7 +161,7 @@ def _run(frames, pose_model=None, **kwargs):
     tracker = PoseTracker(_Solution, **kwargs)
     image = np.zeros((8, 8, 3), dtype=np.uint8)
     results = []
-    for _ in frames:
+    for _ in range(n_frames or len(frames)):
         outputs = tracker(image)
         keypoints = outputs[-1] if len(outputs) == 4 else outputs[0]
         results.append((list(tracker.track_ids_last_frame),
@@ -196,23 +201,14 @@ def test_crossing_people_keep_their_ids_by_overlap():
 
 
 def test_ids_persist_across_frames_without_detection():
-
-    class _Solution:
-
-        def __init__(self, **_):
-            self.det_model = _ScriptedDetector([[A, B], [A, TINY, B]])
-            self.pose_model = _BoxPoseModel()
-
-    tracker = PoseTracker(_Solution, det_frequency=2)
-    image = np.zeros((8, 8, 3), dtype=np.uint8)
-    for expected in ([0, 1], [0, 1], [0, 1]):
-        tracker(image)
-        assert tracker.track_ids_last_frame == expected
+    # The detector runs on frames 0 and 2; frame 1 reuses the tracked boxes.
+    results = _run([[A, B], [A, TINY, B]], n_frames=3, det_frequency=2)
+    assert [ids for ids, _, _ in results] == [[0, 1], [0, 1], [0, 1]]
+    assert results[-1][1] == [0, 300]
 
 
 def test_tracking_off_returns_every_pose_in_detection_order():
-    ids, xs, (keypoints, _) = _run([[A, B], [TINY, B, A]],
-                                   tracking=False)[-1]
+    ids, xs, (keypoints, _) = _run([[A, B], [TINY, B, A]], tracking=False)[-1]
     assert xs == [900, 300, 0]
     assert len(keypoints) == 3
 
